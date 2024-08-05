@@ -1,0 +1,461 @@
+import warnings
+# Suppress specific warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore")
+
+import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN, ROW
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import welly
+from welly import Well
+import os
+import http.server
+import socketserver
+import threading
+import json
+import traceback
+from matplotlib.ticker import MultipleLocator, Locator
+from dlishandler import get_dlis_data, datasets_to_las
+from scipy import interpolate
+
+
+
+# Default aliases and styles for parsing LAS files
+default_aliases = {
+    "sonic": ["none", "DTC", "DT24", "DTCO", "DT", "AC", "AAC", "DTHM"],
+    "ssonic": ["none", "DTSM"],
+    "gr": ["none", "GR", "GRD", "CGR", "GRR", "GRCFM"],
+    "sp": ["none", "SP", "SPR"],
+    "resdeep": ["none", "HDRS", "LLD", "M2RX", "MLR4C", "RD", "RT90", "RLA1", "RDEP", "RLLD", "RILD", "ILD", "RT_HRLT", "RACELM"],
+    "resdmed": ["none", "RILM", "ILM"],
+    "resmeds": ["none"],
+    "resshal": ["none", "LLS", "HMRS", "M2R1", "RS", "RFOC", "ILS", "RSFL", "RMED", "RACEHM", "RXO_HRLT"],
+    "density": ["none", "ZDEN", "RHOB", "RHOZ", "RHO", "DEN", "RHO8", "BDCFM"],
+    "neutron": ["none", "CNCF", "NPHI", "NEU", "TNPH", "NPHI_LIM"],
+    "pe": ["none", "PEFLA", "PEF8", "PE"]
+}
+aliases = {}
+default_styles = {
+    "gr": {"color": "green", "linewidth": 1.5, "style": '-', "track": 0, "left": 0, "right": 150, "type": 'linear', "unit": 'gAPI', "fill": "left"},
+    "sp": {"color": "blue", "linewidth": 1.5, "style": '--', "track": 0, "left": -1000, "right": 1000, "type": 'linear', "unit": 'mV', "fill": "none"},
+    "resshal": {"color": "red", "linewidth": 1.5, "style": '-', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
+    "resdeep": {"color": "black", "linewidth": 1.5, "style": '-.', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
+    "resdmed": {"color": "black", "linewidth": 1.5, "style": '--', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
+    "resmeds": {"color": "black", "linewidth": 1.5, "style": ':', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
+    "pe": {"color": "green", "linewidth": 1.5, "style": ':', "track": 2, "left": 0, "right": 20, "type": 'linear', "unit": 'barns/electron', "fill": "none"},
+    "neutron": {"color": "blue", "linewidth": 1.5, "style": ':', "track": 2, "left": 0.54, "right": -0.06, "type": 'linear', "unit": 'p.u.', "fill": "none"},
+    "sonic": {"color": "black", "linewidth": 1.5, "style": ':', "track": 2, "left": 140, "right": 40, "type": 'linear', "unit": 'uspf', "fill": "none"},
+    "density": {"color": "brown", "linewidth": 1.5, "style": '-', "track": 2, "left": 1.8, "right": 2.8, "type": 'linear', "unit": 'g/cc', "fill": "none"}
+}
+
+# Plotter function (assumed to be provided)
+from Plotter3 import plot_logs, choptop
+
+class LogPlotterApp(toga.App):
+    def startup(self):
+        # Create the main window
+        self.main_window = toga.MainWindow(title=self.formal_name)
+        
+        # Create file selection buttons for Log One
+        self.log_one_label = toga.Label('Log One:', style=Pack(padding=(5, 0)))
+        self.file_button_one = toga.Button('Select LAS file', on_press=self.select_las_file_one, style=Pack(padding=1, flex=1))
+        self.dlis_button_one = toga.Button('Select DLIS file', on_press=self.select_dlis_file_one, style=Pack(padding=1, flex=1))
+        self.button_box_one = toga.Box(children=[self.file_button_one, self.dlis_button_one], style=Pack(direction=ROW))
+        
+        # Create file selection buttons for Log Two
+        self.log_two_label = toga.Label('Log Two:', style=Pack(padding=(5, 0)))
+        self.file_button_two = toga.Button('Select LAS file', on_press=self.select_las_file_two, style=Pack(padding=1, flex=1))
+        self.dlis_button_two = toga.Button('Select DLIS file', on_press=self.select_dlis_file_two, style=Pack(padding=1, flex=1))
+        self.button_box_two = toga.Box(children=[self.file_button_two, self.dlis_button_two], style=Pack(direction=ROW))
+        
+        # Create merge and plot button
+        self.merge_plot_button = toga.Button('Merge and Plot', on_press=self.merge_and_plot, style=Pack(padding=5))
+        # Create merge and save button
+        self.save_merged_las_button = toga.Button('Save Merged LAS', on_press=self.save_merged_las, style=Pack(padding=5))
+        
+        # Create text inputs for displaying and modifying aliases and styles
+        self.aliases_input = toga.MultilineTextInput(
+            value=json.dumps(default_aliases, indent=4), style=Pack(flex=1, padding=5)
+        )
+        self.styles_input = toga.MultilineTextInput(
+            value=json.dumps(default_styles, indent=4), style=Pack(flex=1, padding=5)
+        )
+        
+        # Create input fields for interpolation
+        self.interpolate_top_label = toga.Label('Interpolate Top:', style=Pack(padding=(5, 0)))
+        self.interpolate_top_input = toga.TextInput(style=Pack(flex=1))
+        self.interpolate_bottom_label = toga.Label('Interpolate Bottom:', style=Pack(padding=(5, 0)))
+        self.interpolate_bottom_input = toga.TextInput(style=Pack(flex=1))
+        
+        # Create decimate and interpolate button
+        self.decimate_interpolate_button = toga.Button('Decimate and Interpolate', on_press=self.decimate_and_interpolate, style=Pack(padding=5))
+
+        # Create merge and plot button
+        self.merge_plot_button = toga.Button('Merge and Plot', on_press=self.merge_and_plot, style=Pack(padding=5))
+        
+        # Labels
+        self.aliases_label = toga.Label('Aliases:', style=Pack(padding=(5, 0)))
+        self.styles_label = toga.Label('Styles:', style=Pack(padding=(5, 0)))
+        
+        self.aliasbox = toga.Box(children=[self.aliases_label, self.aliases_input], style=Pack(direction=COLUMN,padding=10,flex=1))
+        self.stylesbox = toga.Box(children=[self.styles_label, self.styles_input], style=Pack(direction=COLUMN,padding=10,flex=1))
+        self.combobox = toga.Box(children=[self.aliasbox, self.stylesbox], style=Pack(direction=ROW,padding=10,flex=1))
+        
+        # Create the main box for the first page
+        self.main_box = toga.Box(
+            children=[
+                self.log_one_label, self.button_box_one,
+                self.log_two_label, self.button_box_two,
+                self.interpolate_top_label, self.interpolate_top_input,
+                self.interpolate_bottom_label, self.interpolate_bottom_input,
+                self.decimate_interpolate_button,
+                self.merge_plot_button,
+                self.save_merged_las_button,  # Add this line
+                self.combobox
+            ],
+            style=Pack(direction=COLUMN, padding=10)
+        )
+        
+        # Initialize dataframes
+        self.dataframe1 = None
+        self.dataframe2 = None
+        self.interpolate_flag = False
+        self.interpolate_top = None
+        self.interpolate_bottom = None
+        
+        # Create the second page with a back button and webview
+        self.back_button = toga.Button('Back', on_press=self.show_main_page, style=Pack(padding=5))
+        self.webview = toga.WebView(style=Pack(flex=1))
+        
+        self.plot_box = toga.Box(children=[self.back_button, self.webview], style=Pack(direction=COLUMN))
+        
+        # Show the main page
+        self.main_window.content = self.main_box
+        self.main_window.show()
+
+    def show_main_page(self, widget=None):
+        self.stop_server()
+        self.main_window.content = self.main_box
+        
+
+    def show_plot_page(self, widget=None):
+        self.main_window.content = self.plot_box
+
+    async def select_las_file_one(self, widget):
+        await self.select_file(file_type='las', log_number=1)
+
+    async def select_dlis_file_one(self, widget):
+        await self.select_file(file_type='dlis', log_number=1)
+
+    async def select_las_file_two(self, widget):
+        await self.select_file(file_type='las', log_number=2)
+
+    async def select_dlis_file_two(self, widget):
+        await self.select_file(file_type='dlis', log_number=2)
+
+    async def select_file(self, file_type, log_number):
+        try:
+            selected_file = await self.main_window.open_file_dialog(
+                title=f'Select {file_type.upper()} file for Log {log_number}',
+                multiple_select=False,
+                file_types=[file_type]
+            )
+
+            if selected_file:
+                self.process_file(selected_file, file_type, log_number)
+                
+        except Exception as e:
+            self.main_window.error_dialog('Error', str(e))
+
+    def process_file(self, file_path, file_type, log_number):
+        try:
+            global aliases
+            aliases = json.loads(self.aliases_input.value)
+
+            if file_type == 'las':
+                well = Well.from_las(file_path)
+                df = well.df()
+                header = well.header
+                units = {}  # Empty dictionary for LAS files
+            elif file_type == 'dlis':
+                df, units, header, pdict = get_dlis_data(file_path, aliases)
+                # Ensure header is a DataFrame for DLIS files
+                if not isinstance(header, pd.DataFrame):
+                    header = pd.DataFrame(header)
+            else:
+                raise ValueError("Unsupported file type")
+            
+            if log_number == 1:
+                self.dataframe1 = df
+                self.log1_header = header
+                self.log1_units = units
+            else:
+                self.dataframe2 = df
+                self.log2_header = header  # Store header for log2
+                self.log2_units = units
+
+            self.main_window.info_dialog('Success', f'Log {log_number} loaded successfully')
+        
+        except Exception as e:
+            traceback.print_exc()
+            self.main_window.error_dialog('Error', str(e))
+        
+    def decimate_and_interpolate(self, widget):
+        try:
+            self.interpolate_top = float(self.interpolate_top_input.value)
+            self.interpolate_bottom = float(self.interpolate_bottom_input.value)
+            self.interpolate_flag = True
+            self.main_window.info_dialog('Success', 'Decimation and interpolation settings applied')
+        except ValueError:
+            self.main_window.error_dialog('Error', 'Please enter valid numbers for interpolation range')
+    
+    def merge_and_plot(self, widget):
+        if self.dataframe1 is None or self.dataframe2 is None:
+            self.main_window.error_dialog('Error', 'Please load both logs before merging')
+            return
+        try:
+            # Concatenate dataframes
+            dataframe2_trimmed = self.dataframe2[~self.dataframe2.index.isin(self.dataframe1.index)]
+            merged_df = pd.concat([self.dataframe1, dataframe2_trimmed])
+
+            # Sort the merged dataframe by index (depth) and remove duplicate indices
+            merged_df = merged_df.sort_index().loc[~merged_df.index.duplicated(keep='first')]
+
+            # Ensure strict monotonicity
+            merged_df = merged_df[merged_df.index.to_series().diff().fillna(1) > 0]
+
+            # Calculate average sample spacing
+            avg_spacing = np.diff(merged_df.index).mean()
+
+            # Create new uniform depth array
+            new_depth = np.arange(merged_df.index.min(), merged_df.index.max(), avg_spacing)
+
+            # Interpolate data onto new depth array
+            resampled_df = pd.DataFrame(index=new_depth, columns=merged_df.columns)
+            for column in merged_df.columns:
+                f = interpolate.interp1d(merged_df.index, merged_df[column], kind='linear', bounds_error=False, fill_value='extrapolate')
+                resampled_df[column] = f(new_depth)
+
+            self.merged_df = resampled_df
+
+            # Merge units
+            self.merged_units = self.log1_units.copy() if hasattr(self, 'log1_units') else {}
+            if hasattr(self, 'log2_units'):
+                for curve, unit in self.log2_units.items():
+                    if curve not in self.merged_units:
+                        self.merged_units[curve] = unit
+
+            if self.interpolate_flag:
+                self.merged_df = self.apply_decimation_and_interpolation(self.merged_df)
+
+            self.plot_dataframe(self.merged_df)
+
+            # Inform the user about resampling
+            self.main_window.info_dialog('Data Resampled', 
+                f'Data has been resampled to a uniform spacing of {avg_spacing:.3f} units.')
+
+        except Exception as e:
+            traceback.print_exc()
+            self.main_window.error_dialog('Error', str(e))
+
+    def apply_decimation_and_interpolation(self, df):
+        # Create a mask for the interpolation range
+        mask = (df.index >= self.interpolate_top) & (df.index <= self.interpolate_bottom)
+        
+        # Replace values in the interpolation range with NaN
+        df.loc[mask] = np.nan
+        
+        # Interpolate the NaN values
+        df = df.interpolate(method='linear')
+        
+        return df
+            
+
+    async def save_merged_las(self, widget):
+        if not hasattr(self, 'merged_df') or self.merged_df is None:
+            self.main_window.error_dialog('Error', 'Please merge the logs first')
+            return
+        try:
+            save_path = await self.main_window.save_file_dialog(
+                title="Save Merged LAS File",
+                suggested_filename="merged_log.las",
+                file_types=['las']
+            )
+            if save_path:
+                # Use header from log2
+                header = self.log2_header if hasattr(self, 'log2_header') else pd.DataFrame()
+                c_units = self.merged_units if hasattr(self, 'merged_units') else {}
+
+                # Ensure WELL section exists in header
+                if 'WELL' not in header.index:
+                    header.loc['WELL', 'UWI'] = 'Unknown'
+
+                # Update the WELL section with the new TD (total depth)
+                if 'WELL' in header.index:
+                    header.loc['WELL', 'STOP'] = self.merged_df.index[-1]
+
+                datasets_to_las(save_path, {'Header': header, 'Curves': self.merged_df}, c_units)
+                self.main_window.info_dialog('Success', f'Merged LAS file saved to {save_path}')
+        except Exception as e:
+            traceback.print_exc()
+            self.main_window.error_dialog('Error', str(e))
+        
+        
+        
+    def plot_dataframe(self, df):
+        try:
+            styles = json.loads(self.styles_input.value)
+            mnemonic_map = {}
+            for key, values in aliases.items():
+                for value in values:
+                    if value in df.columns:
+                        mnemonic_map[value] = key
+
+            updated_styles = {mnemonic: styles[standard_mnemonic] for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic in styles}
+            df = df[[col for col in df.columns if col in updated_styles]]
+            
+            # Check if the "neutron" mnemonic column exists and if its nanmean exceeds the threshold
+            neutron_mnemonics = [mnemonic for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic == "neutron"]
+            for neutron_mnemonic in neutron_mnemonics:
+                if neutron_mnemonic in df.columns and np.nanmean(df[neutron_mnemonic]) > 1:
+                    df[neutron_mnemonic] /= 100
+            
+            height = 200
+            dpi=300
+            Locator.MAXTICKS = (df.index[-1] - df.index[0]) + 10
+
+            fig, axes = plot_logs(df, updated_styles, points=None, pointstyles=None, y_min=df.index[0], y_max=df.index[-1], plot_labels=False, figsize=(15, height), label_height=20, dpi=dpi)
+            for ax in axes:
+                ax.yaxis.set_major_locator(MultipleLocator(5))
+                ax.yaxis.set_minor_locator(MultipleLocator(1))
+                ax.grid(which='minor', axis='y', color='gray', linestyle='-', linewidth=0.25)
+                ax.grid(which='major', axis='y', color='gray', linestyle='-', linewidth=0.5)
+
+            plot_path = os.path.abspath('plot.png')
+            plt.savefig(plot_path, dpi=100)
+            plt.close()
+
+            choptop(round(height * 12), round(height * 11), plot_path)
+            track_counts = {}
+            for key, value in updated_styles.items():
+                track = value['track']
+                if track in track_counts:
+                    track_counts[track] += 1
+                else:
+                    track_counts[track] = 1
+
+            maxcurves = max(track_counts.values())
+            choptop(round((dpi*3) - (maxcurves * (45*(dpi/100)))), 15*(dpi/100), 'TopLabel.png')
+
+            if not os.path.exists(plot_path):
+                raise FileNotFoundError(f"Plot image not found at {plot_path}")
+
+            if not hasattr(self, 'server_thread'):
+                self.start_server()
+
+            img_html = '''
+<html>
+<head>
+<style>
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+#container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+
+#top-label {
+    flex: 0 0 auto;
+    width: 100%;
+    background-color: white;
+    z-index: 1;
+}
+
+#plot-container {
+    flex: 1 1 auto;
+    width: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+#plot-container::-webkit-scrollbar {
+    display: none;
+}
+
+#plot-wrapper {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+#plot {
+    width: 100%;
+    display: block;
+}
+</style>
+</head>
+<body>
+<div id="container">
+    <div id="top-label">
+        <img src="http://localhost:8000/TopLabel.png" alt="Top Label" style="width: 100%;">
+    </div>
+    <div id="plot-container">
+        <div id="plot-wrapper">
+            <img id="plot" src="http://localhost:8000/plot.png" alt="Log Plot">
+        </div>
+    </div>
+</div>
+</body>
+</html>
+            '''
+
+            self.webview.set_content(content=img_html, root_url="http://localhost:8000/")
+            self.show_plot_page()
+        except Exception as e:
+            traceback.print_exc()
+            self.main_window.error_dialog('Error', str(e))
+
+    def start_server(self):
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=os.getcwd(), **kwargs)
+
+        self.server = socketserver.TCPServer(('localhost', 8000), Handler)
+        self.server_thread = threading.Thread(target=self.server.serve_forever)
+        self.server_thread.daemon = True
+        self.server_thread.start()
+    
+    def stop_server(self):
+        if hasattr(self, 'server'):
+            #self.server.shutdown()
+            print("shutdown")
+            self.server.server_close()
+            print("server close")
+            #self.server_thread.join()
+            print("thread join")
+            del self.server_thread
+            print("del server")
+            del self.server
+            print("server stopped and thread joined")
+
+def main():
+    app = LogPlotterApp('LogPlotter', 'com.rocklab.logplotter')
+    app.main_loop()
+
+if __name__ == '__main__':
+    main()
+
