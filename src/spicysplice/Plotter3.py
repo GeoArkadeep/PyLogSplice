@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.colors as mcolors
 from PIL import Image
 
-def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=None, plot_labels=True, figsize=(15, 10), label_height=20, dpi=100):
+def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=None, plot_labels=True, width=15,height=10, label_height=20, dpi=100):
     """
     Plots well log data in tracks and sparse data points.
 
@@ -22,6 +22,8 @@ def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=Non
     - label_height: Height of the label rectangles (default is 20).
     - dpi: Dots per inch for the saved figure.
     """
+    
+    figsize=(width, height)
     if y_max is not None and y_min is not None and y_max > y_min:
         invert_yaxis = True
         pltsign = 1
@@ -225,8 +227,8 @@ def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=Non
     else:
         simulated_depth = np.array([2600])
         simulated_data = pd.DataFrame({key: np.random.rand(len(data.columns)) for key in data.columns})
-        plot_logs(simulated_data, styles, None, None, 2601, 2602, plot_labels=True, figsize=(15, 3), label_height=98, dpi=dpi)
-        plot_logs(simulated_data, styles, None, None, 2601, 2600, plot_labels=True, figsize=(15, 3), label_height=98, dpi=dpi)
+        plot_logs(simulated_data, styles, None, None, 2601, 2602, plot_labels=True, width=width,height=3, label_height=98, dpi=dpi)
+        plot_logs(simulated_data, styles, None, None, 2601, 2600, plot_labels=True, width=width,height=3, label_height=98, dpi=dpi)
         return fig, axes
     
     plt.close()

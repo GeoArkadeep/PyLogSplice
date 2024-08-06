@@ -28,7 +28,7 @@ from matplotlib.ticker import MultipleLocator, Locator
 from dlishandler import get_dlis_data, datasets_to_las
 from scipy import interpolate
 
-
+from plotandshow import create_plot_window
 
 # Default aliases and styles for parsing LAS files
 default_aliases = {
@@ -219,6 +219,8 @@ class LogPlotterApp(toga.App):
         except ValueError:
             self.main_window.error_dialog('Error', 'Please enter valid numbers for interpolation range')
     
+    
+
     def merge_and_plot(self, widget):
         if self.dataframe1 is None or self.dataframe2 is None:
             self.main_window.error_dialog('Error', 'Please load both logs before merging')
@@ -258,7 +260,25 @@ class LogPlotterApp(toga.App):
             if self.interpolate_flag:
                 self.merged_df = self.apply_decimation_and_interpolation(self.merged_df)
 
-            self.plot_dataframe(self.merged_df)
+            # Use the new PlotAndShow module
+            styles = json.loads(self.styles_input.value)
+            mnemonic_map = {}
+            for key, values in aliases.items():
+                for value in values:
+                    if value in self.merged_df.columns:
+                        mnemonic_map[value] = key
+
+            updated_styles = {mnemonic: styles[standard_mnemonic] for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic in styles}
+            self.merged_df = self.merged_df[[col for col in self.merged_df.columns if col in updated_styles]]
+
+            # Check if the "neutron" mnemonic column exists and if its nanmean exceeds the threshold
+            neutron_mnemonics = [mnemonic for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic == "neutron"]
+            for neutron_mnemonic in neutron_mnemonics:
+                if neutron_mnemonic in self.merged_df.columns and np.nanmean(self.merged_df[neutron_mnemonic]) > 1:
+                    self.merged_df[neutron_mnemonic] /= 100
+
+            # Create the plot window
+            create_plot_window(self, self.merged_df, updated_styles, title='Spliced')
 
             # Inform the user about resampling
             self.main_window.info_dialog('Data Resampled', 
@@ -267,7 +287,7 @@ class LogPlotterApp(toga.App):
         except Exception as e:
             traceback.print_exc()
             self.main_window.error_dialog('Error', str(e))
-
+        
     def apply_decimation_and_interpolation(self, df):
         # Create a mask for the interpolation range
         mask = (df.index >= self.interpolate_top) & (df.index <= self.interpolate_bottom)
