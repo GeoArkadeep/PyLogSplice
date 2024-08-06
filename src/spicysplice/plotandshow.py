@@ -2,6 +2,7 @@ import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
 import os
+import shutil
 from matplotlib import pyplot as plt
 import math
 from Plotter3 import plot_logs, choptop
@@ -42,7 +43,10 @@ class PlotAndShow:
         # Rename TopLabel.png
         top_label_filename = f'{title}_TopLabel.png'
         if os.path.exists('TopLabel.png'):
-            os.rename('TopLabel.png', top_label_filename)
+            if os.path.exists(top_label_filename):
+                # If the destination file exists, remove it first
+                os.remove(top_label_filename)
+            shutil.move('TopLabel.png', top_label_filename)
 
         # Create a new window
         window = toga.Window(title=title)

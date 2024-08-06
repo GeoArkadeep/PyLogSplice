@@ -203,8 +203,25 @@ class LogPlotterApp(toga.App):
                 self.dataframe2 = df
                 self.log2_header = header  # Store header for log2
                 self.log2_units = units
+            
+            styles = json.loads(self.styles_input.value)
+            mnemonic_map = {}
+            for key, values in aliases.items():
+                for value in values:
+                    if value in df.columns:
+                        mnemonic_map[value] = key
 
-            self.main_window.info_dialog('Success', f'Log {log_number} loaded successfully')
+            updated_styles = {mnemonic: styles[standard_mnemonic] for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic in styles}
+            df = df[[col for col in df.columns if col in updated_styles]]
+
+            # Check if the "neutron" mnemonic column exists and if its nanmean exceeds the threshold
+            neutron_mnemonics = [mnemonic for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic == "neutron"]
+            for neutron_mnemonic in neutron_mnemonics:
+                if neutron_mnemonic in df.columns and np.nanmean(df[neutron_mnemonic]) > 1:
+                    df[neutron_mnemonic] /= 100
+            
+            create_plot_window(self, df, updated_styles, title=f'Log{log_number}')
+            #self.main_window.info_dialog('Success', f'Log {log_number} loaded successfully')
         
         except Exception as e:
             traceback.print_exc()
@@ -326,131 +343,6 @@ class LogPlotterApp(toga.App):
 
                 datasets_to_las(save_path, {'Header': header, 'Curves': self.merged_df}, c_units)
                 self.main_window.info_dialog('Success', f'Merged LAS file saved to {save_path}')
-        except Exception as e:
-            traceback.print_exc()
-            self.main_window.error_dialog('Error', str(e))
-        
-        
-        
-    def plot_dataframe(self, df):
-        try:
-            styles = json.loads(self.styles_input.value)
-            mnemonic_map = {}
-            for key, values in aliases.items():
-                for value in values:
-                    if value in df.columns:
-                        mnemonic_map[value] = key
-
-            updated_styles = {mnemonic: styles[standard_mnemonic] for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic in styles}
-            df = df[[col for col in df.columns if col in updated_styles]]
-            
-            # Check if the "neutron" mnemonic column exists and if its nanmean exceeds the threshold
-            neutron_mnemonics = [mnemonic for mnemonic, standard_mnemonic in mnemonic_map.items() if standard_mnemonic == "neutron"]
-            for neutron_mnemonic in neutron_mnemonics:
-                if neutron_mnemonic in df.columns and np.nanmean(df[neutron_mnemonic]) > 1:
-                    df[neutron_mnemonic] /= 100
-            
-            height = 200
-            dpi=300
-            Locator.MAXTICKS = (df.index[-1] - df.index[0]) + 10
-
-            fig, axes = plot_logs(df, updated_styles, points=None, pointstyles=None, y_min=df.index[0], y_max=df.index[-1], plot_labels=False, figsize=(15, height), label_height=20, dpi=dpi)
-            for ax in axes:
-                ax.yaxis.set_major_locator(MultipleLocator(5))
-                ax.yaxis.set_minor_locator(MultipleLocator(1))
-                ax.grid(which='minor', axis='y', color='gray', linestyle='-', linewidth=0.25)
-                ax.grid(which='major', axis='y', color='gray', linestyle='-', linewidth=0.5)
-
-            plot_path = os.path.abspath('plot.png')
-            plt.savefig(plot_path, dpi=100)
-            plt.close()
-
-            choptop(round(height * 12), round(height * 11), plot_path)
-            track_counts = {}
-            for key, value in updated_styles.items():
-                track = value['track']
-                if track in track_counts:
-                    track_counts[track] += 1
-                else:
-                    track_counts[track] = 1
-
-            maxcurves = max(track_counts.values())
-            choptop(round((dpi*3) - (maxcurves * (45*(dpi/100)))), 15*(dpi/100), 'TopLabel.png')
-
-            if not os.path.exists(plot_path):
-                raise FileNotFoundError(f"Plot image not found at {plot_path}")
-
-            if not hasattr(self, 'server_thread'):
-                self.start_server()
-
-            img_html = '''
-<html>
-<head>
-<style>
-body, html {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
-    box-sizing: border-box;
-}
-
-#container {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-}
-
-#top-label {
-    flex: 0 0 auto;
-    width: 100%;
-    background-color: white;
-    z-index: 1;
-}
-
-#plot-container {
-    flex: 1 1 auto;
-    width: 100%;
-    overflow-y: scroll;
-    overflow-x: hidden;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
-#plot-container::-webkit-scrollbar {
-    display: none;
-}
-
-#plot-wrapper {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-}
-
-#plot {
-    width: 100%;
-    display: block;
-}
-</style>
-</head>
-<body>
-<div id="container">
-    <div id="top-label">
-        <img src="http://localhost:8000/TopLabel.png" alt="Top Label" style="width: 100%;">
-    </div>
-    <div id="plot-container">
-        <div id="plot-wrapper">
-            <img id="plot" src="http://localhost:8000/plot.png" alt="Log Plot">
-        </div>
-    </div>
-</div>
-</body>
-</html>
-            '''
-
-            self.webview.set_content(content=img_html, root_url="http://localhost:8000/")
-            self.show_plot_page()
         except Exception as e:
             traceback.print_exc()
             self.main_window.error_dialog('Error', str(e))
