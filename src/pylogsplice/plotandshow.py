@@ -5,10 +5,13 @@ import os
 import shutil
 from matplotlib import pyplot as plt
 import math
-from Plotter3 import plot_logs, choptop
+from Plotter3 import plot_logs_labels, choptop
 import pandas as pd
 import numpy as np
 from matplotlib.ticker import MultipleLocator, Locator
+
+import mpld3
+from mpld3._server import serve
 
 class PlotAndShow:
     def __init__(self, app):
@@ -22,18 +25,19 @@ class PlotAndShow:
         width = round(width + 0.5 * width)
 
         # Create the plot
-        fig, axes = plot_logs(data, styles, points, pointstyles, y_min=data.index[0], y_max=data.index[-1], 
-                              plot_labels=False, width = width/dpi, height=height/dpi, label_height=20, dpi=dpi)
-        
+        fig, axes = plot_logs_labels(data, styles, points, pointstyles, y_min=data.index[0], y_max=data.index[-1], width = width/dpi, height=height/dpi, label_height=20, dpi=dpi)
+
+        """
         for ax in axes:
             ax.yaxis.set_major_locator(MultipleLocator(5))
             ax.yaxis.set_minor_locator(MultipleLocator(1))
             ax.grid(which='minor', axis='y', color='gray', linestyle='-', linewidth=0.25)
             ax.grid(which='major', axis='y', color='gray', linestyle='-', linewidth=0.5)
-        
+        """
         # Save the plot
         plot_filename = f'{title}_image.png'
         plt.savefig(plot_filename, dpi=dpi)
+                
         plt.close(fig)
 
         padT = 9

@@ -4,6 +4,36 @@ import pandas as pd
 import matplotlib.colors as mcolors
 from PIL import Image
 
+def plot_logs_labels(data, styles, points=None, pointstyles=None, y_min=None, y_max=None, width=15, height=10, label_height=20, dpi=100):
+    """
+    Wrapper function that calls plot_logs three times to generate the main plot and label plots.
+    
+    Parameters:
+    - Same as plot_logs function, except plot_labels is not included as it's handled internally.
+    
+    Returns:
+    - fig, axes: The figure and axes objects of the main plot.
+    """
+    
+    # Generate simulated data for label plots
+    simulated_depth = np.array([2600])
+    simulated_data = pd.DataFrame({key: np.random.rand(1) for key in data.columns}, index=simulated_depth)
+    
+    # Call plot_logs for bottom labels
+    plot_logs(simulated_data, styles, None, None, 2601, 2602, 
+              plot_labels=True, width=width, height=3, label_height=98, 
+              dpi=dpi)
+    
+    # Call plot_logs for top labels
+    plot_logs(simulated_data, styles, None, None, 2601, 2600, 
+              plot_labels=True, width=width, height=3, label_height=98, 
+              dpi=dpi)
+    # Call plot_logs for the main plot without labels
+    fig, axes = plot_logs(data, styles, points, pointstyles, y_min, y_max, 
+                          plot_labels=False, width=width,height=height, label_height=label_height, 
+                          dpi=dpi)
+    return fig, axes
+
 def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=None, plot_labels=True, width=15,height=10, label_height=20, dpi=100):
     """
     Plots well log data in tracks and sparse data points.
@@ -221,18 +251,13 @@ def plot_logs(data, styles, points=None, pointstyles=None, y_min=None, y_max=Non
         if pltsign > 0:
             #plt.tight_layout()
             plt.savefig('BottomLabel.png', dpi=dpi)
+            return
         else:
             #plt.tight_layout()
             plt.savefig('TopLabel.png', dpi=dpi)
-    else:
-        simulated_depth = np.array([2600])
-        simulated_data = pd.DataFrame({key: np.random.rand(len(data.columns)) for key in data.columns})
-        plot_logs(simulated_data, styles, None, None, 2601, 2602, plot_labels=True, width=width,height=3, label_height=98, dpi=dpi)
-        plot_logs(simulated_data, styles, None, None, 2601, 2600, plot_labels=True, width=width,height=3, label_height=98, dpi=dpi)
-        return fig, axes
+            return
     
-    plt.close()
-
+    return fig, axes
     
 
 
@@ -362,27 +387,49 @@ def chopify(n1,x1,x2,x3,x4):
     #img1.show()
 
 #cutify2('plot.png','BottomLabel.png','combined.png',119,109,120,120)
-"""
-# Example usage of the modified function
-data = pd.DataFrame({
-    'log1': np.random.random(100) * 150,
-    'log2': np.random.random(100) * 200,
-}, index=np.linspace(0, 1000, 100))
 
-styles = {
-    'log1': {"color": "green", "linewidth": 1.5, "style": '-', "track": 0, "left": 0, "right": 150, "type": 'linear', "unit": "m/s"},
-    'log2': {"color": "blue", "linewidth": 1.5, "style": '-', "track": 1, "left": 0, "right": 200, "type": 'linear', "unit": "m/s"},
-}
 
-points = pd.DataFrame({
-    'point1': np.random.random(10) * 100,
-    'point2': np.random.random(10) * 50,
-}, index=np.linspace(0, 1000, 10))
+if __name__ == '__main__':
+    # Example usage of the modified function
+    import plotly.tools as tls
+    import plotly.io as pio
+    
+    data = pd.DataFrame({
+        'log1': np.random.random(100) * 150,
+        'log2': np.random.random(100) * 200,
+    }, index=np.linspace(0, 1000, 100))
 
-pointstyles = {
-    'point1': {'color': 'red', 'pointsize': 50, 'symbol': 'o', 'track': 0, 'left': 0, 'right': 100, 'type': 'linear', 'unit': "Mpa", 'uptosurface': True},
-    'point2': {'color': 'purple', 'pointsize': 50, 'symbol': 'o', 'track': 1, 'left': 0, 'right': 50, 'type': 'linear', 'unit': "Mpa"},
-}
+    styles = {
+        'log1': {"color": "green", "linewidth": 1.5, "style": '-', "track": 0, "left": 0, "right": 150, "type": 'linear', "unit": "m/s"},
+        'log2': {"color": "blue", "linewidth": 1.5, "style": '-', "track": 1, "left": 0, "right": 200, "type": 'linear', "unit": "m/s"},
+    }
 
-x = plot_logs(data, styles, points, pointstyles, y_min=0, y_max=1000)
-"""
+    points = pd.DataFrame({
+        'point1': np.random.random(10) * 100,
+        'point2': np.random.random(10) * 50,
+    }, index=np.linspace(0, 1000, 10))
+
+    pointstyles = {
+        'point1': {'color': 'red', 'pointsize': 50, 'symbol': 'o', 'track': 0, 'left': 0, 'right': 100, 'type': 'linear', 'unit': "Mpa", 'uptosurface': True},
+        'point2': {'color': 'purple', 'pointsize': 50, 'symbol': 'o', 'track': 1, 'left': 0, 'right': 50, 'type': 'linear', 'unit': "Mpa"},
+    }
+
+    # Convert the Matplotlib figure with subplots to a Plotly figure
+    plotly_fig = tls.mpl_to_plotly(plot_logs_labels(data, styles, points, pointstyles, y_min=0, y_max=1000)[0])
+
+    # Fix the x-axis range for both subplots
+    plotly_fig.update_xaxes(fixedrange=True)
+
+    # Share the y-axis between subplots
+    plotly_fig.update_yaxes(matches='y')
+
+    # Make sure the plot fits the width of the browser
+    plotly_fig.update_layout(
+        autosize=True,
+        width=None,  # Remove the fixed width to make it responsive
+        #height=600,  # Set a fixed height if needed, or leave it auto-sized
+        margin=dict(l=0, r=0, t=30, b=30)  # Adjust margins as needed
+    )
+
+    # Save as an interactive HTML file and open it in the browser
+    pio.write_html(plotly_fig, file='responsive_plot.html', config={'displayModeBar':False}, auto_open=True)

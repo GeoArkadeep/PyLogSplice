@@ -51,15 +51,13 @@ default_styles = {
     "resshal": {"color": "red", "linewidth": 1.5, "style": '-', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
     "resdeep": {"color": "black", "linewidth": 1.5, "style": '-.', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
     "resdmed": {"color": "black", "linewidth": 1.5, "style": '--', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
-    "resmeds": {"color": "black", "linewidth": 1.5, "style": ':', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
-    "pe": {"color": "green", "linewidth": 1.5, "style": ':', "track": 2, "left": 0, "right": 20, "type": 'linear', "unit": 'barns/electron', "fill": "none"},
-    "neutron": {"color": "blue", "linewidth": 1.5, "style": ':', "track": 2, "left": 0.54, "right": -0.06, "type": 'linear', "unit": 'p.u.', "fill": "none"},
-    "sonic": {"color": "black", "linewidth": 1.5, "style": ':', "track": 2, "left": 140, "right": 40, "type": 'linear', "unit": 'uspf', "fill": "none"},
+    "resmeds": {"color": "black", "linewidth": 1.5, "style": '--', "track": 1, "left": 0.2, "right": 200, "type": 'log', "unit": 'ohm/m', "fill": "none"},
+    "pe": {"color": "green", "linewidth": 1.5, "style": '--', "track": 2, "left": 0, "right": 20, "type": 'linear', "unit": 'barns/electron', "fill": "none"},
+    "neutron": {"color": "blue", "linewidth": 1.5, "style": '--', "track": 2, "left": 0.54, "right": -0.06, "type": 'linear', "unit": 'p.u.', "fill": "none"},
+    "sonic": {"color": "black", "linewidth": 1.5, "style": '--', "track": 2, "left": 140, "right": 40, "type": 'linear', "unit": 'uspf', "fill": "none"},
     "density": {"color": "brown", "linewidth": 1.5, "style": '-', "track": 2, "left": 1.8, "right": 2.8, "type": 'linear', "unit": 'g/cc', "fill": "none"}
 }
 
-# Plotter function (assumed to be provided)
-from Plotter3 import plot_logs, choptop
 
 class LogPlotterApp(toga.App):
     def startup(self):
