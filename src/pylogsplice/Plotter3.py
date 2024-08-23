@@ -388,7 +388,7 @@ def chopify(n1,x1,x2,x3,x4):
 
 #cutify2('plot.png','BottomLabel.png','combined.png',119,109,120,120)
 
-
+"""
 if __name__ == '__main__':
     # Example usage of the modified function
     import plotly.tools as tls
@@ -433,3 +433,4 @@ if __name__ == '__main__':
 
     # Save as an interactive HTML file and open it in the browser
     pio.write_html(plotly_fig, file='responsive_plot.html', config={'displayModeBar':False}, auto_open=True)
+"""

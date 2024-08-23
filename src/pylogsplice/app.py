@@ -2,8 +2,6 @@
 A python GUI and api to combine well logs
 """
 
-#def main():
-#    return Spicysplice()
 import warnings
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -13,6 +11,8 @@ warnings.filterwarnings("ignore")
 import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
+import matplotlib
+matplotlib.use("svg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -240,19 +240,26 @@ class LogPlotterApp(toga.App):
         if self.dataframe1 is None or self.dataframe2 is None:
             self.main_window.error_dialog('Error', 'Please load both logs before merging')
             return
-        try:
-            # Concatenate dataframes
-            dataframe2_trimmed = self.dataframe2[~self.dataframe2.index.isin(self.dataframe1.index)]
-            merged_df = pd.concat([self.dataframe1, dataframe2_trimmed])
 
-            # Sort the merged dataframe by index (depth) and remove duplicate indices
+        try:
+            # Align columns by renaming based on aliases or actual names
+            common_columns = self.dataframe1.columns.intersection(self.dataframe2.columns)
+            all_columns = self.dataframe1.columns.union(self.dataframe2.columns)
+            
+            # Merge the dataframes with interpolation
+            merged_df = pd.concat([self.dataframe1, self.dataframe2], axis=0)
+
+            # Sort by index (depth) and remove duplicate indices
             merged_df = merged_df.sort_index().loc[~merged_df.index.duplicated(keep='first')]
 
+            # Interpolate data onto uniform depth array
+            merged_df = merged_df.interpolate(method='linear', limit_direction='both', axis=0)
+            
             # Ensure strict monotonicity
             merged_df = merged_df[merged_df.index.to_series().diff().fillna(1) > 0]
 
             # Calculate average sample spacing
-            avg_spacing = np.diff(merged_df.index).mean()
+            avg_spacing = 0.15
 
             # Create new uniform depth array
             new_depth = np.arange(merged_df.index.min(), merged_df.index.max(), avg_spacing)
@@ -263,7 +270,13 @@ class LogPlotterApp(toga.App):
                 f = interpolate.interp1d(merged_df.index, merged_df[column], kind='linear', bounds_error=False, fill_value='extrapolate')
                 resampled_df[column] = f(new_depth)
 
+            # Store the result
             self.merged_df = resampled_df
+            
+            #plt.close('all')
+            #plt.plot(self.merged_df.index.values)
+            #plt.show()
+
 
             # Merge units
             self.merged_units = self.log1_units.copy() if hasattr(self, 'log1_units') else {}
@@ -291,17 +304,20 @@ class LogPlotterApp(toga.App):
             for neutron_mnemonic in neutron_mnemonics:
                 if neutron_mnemonic in self.merged_df.columns and np.nanmean(self.merged_df[neutron_mnemonic]) > 1:
                     self.merged_df[neutron_mnemonic] /= 100
+            
+            #self.merged_df.to_csv('merged.csv', sep=',', encoding='utf-8', index=False, header=True)
 
             # Create the plot window
             create_plot_window(self, self.merged_df, updated_styles, title='Spliced')
 
-            # Inform the user about resampling
-            self.main_window.info_dialog('Data Resampled', 
-                f'Data has been resampled to a uniform spacing of {avg_spacing:.3f} units.')
+            # Inform the user about interpolation
+            #self.main_window.info_dialog('Data Interpolated', 
+            #    'Data has been interpolated to fill missing values.')
 
         except Exception as e:
             traceback.print_exc()
             self.main_window.error_dialog('Error', str(e))
+
         
     def apply_decimation_and_interpolation(self, df):
         # Create a mask for the interpolation range
@@ -336,9 +352,12 @@ class LogPlotterApp(toga.App):
                     header.loc['WELL', 'UWI'] = 'Unknown'
 
                 # Update the WELL section with the new TD (total depth)
+                self.merged_df['DEPT'] = self.merged_df.index
                 if 'WELL' in header.index:
-                    header.loc['WELL', 'STOP'] = self.merged_df.index[-1]
-
+                    header.loc['WELL', 'STRT'] = self.merged_df['DEPT'].iloc[0]
+                    header.loc['WELL', 'STOP'] = self.merged_df['DEPT'].iloc[-1]
+                
+                self.merged_df = self.merged_df[['DEPT'] + [col for col in self.merged_df.columns if col != 'DEPT']]
                 datasets_to_las(save_path, {'Header': header, 'Curves': self.merged_df}, c_units)
                 self.main_window.info_dialog('Success', f'Merged LAS file saved to {save_path}')
         except Exception as e:

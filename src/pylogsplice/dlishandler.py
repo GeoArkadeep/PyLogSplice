@@ -4,7 +4,7 @@ dlisio.common.set_encodings(['utf-8','latin-1'])
 from dlisio import dlis
 import numpy as np
 
-def get_dlis_data(path):
+def get_dlis_data_all(path):
     # Load the DLIS file
     f, *tail = dlis.load(path)
     # Get the list of frames
