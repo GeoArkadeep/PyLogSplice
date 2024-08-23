@@ -49,18 +49,24 @@ class LogSplicer:
         if self.dataframe1 is None or self.dataframe2 is None:
             raise ValueError("Please load both logs before merging")
 
-        # Concatenate dataframes
-        dataframe2_trimmed = self.dataframe2[~self.dataframe2.index.isin(self.dataframe1.index)]
-        merged_df = pd.concat([self.dataframe1, dataframe2_trimmed])
+        # Align columns by renaming based on aliases or actual names
+        common_columns = self.dataframe1.columns.intersection(self.dataframe2.columns)
+        all_columns = self.dataframe1.columns.union(self.dataframe2.columns)
 
-        # Sort the merged dataframe by index (depth) and remove duplicate indices
+        # Merge the dataframes with interpolation
+        merged_df = pd.concat([self.dataframe1, self.dataframe2], axis=0)
+
+        # Sort by index (depth) and remove duplicate indices
         merged_df = merged_df.sort_index().loc[~merged_df.index.duplicated(keep='first')]
+
+        # Interpolate data onto uniform depth array
+        merged_df = merged_df.interpolate(method='linear', limit_direction='both', axis=0)
 
         # Ensure strict monotonicity
         merged_df = merged_df[merged_df.index.to_series().diff().fillna(1) > 0]
 
         # Calculate average sample spacing
-        avg_spacing = np.diff(merged_df.index).mean()
+        avg_spacing = 0.15
 
         # Create new uniform depth array
         new_depth = np.arange(merged_df.index.min(), merged_df.index.max(), avg_spacing)
@@ -71,6 +77,7 @@ class LogSplicer:
             f = interpolate.interp1d(merged_df.index, merged_df[column], kind='linear', bounds_error=False, fill_value='extrapolate')
             resampled_df[column] = f(new_depth)
 
+        # Store the result
         self.merged_df = resampled_df
 
         # Merge units

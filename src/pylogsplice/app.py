@@ -273,11 +273,6 @@ class LogPlotterApp(toga.App):
             # Store the result
             self.merged_df = resampled_df
             
-            #plt.close('all')
-            #plt.plot(self.merged_df.index.values)
-            #plt.show()
-
-
             # Merge units
             self.merged_units = self.log1_units.copy() if hasattr(self, 'log1_units') else {}
             if hasattr(self, 'log2_units'):
